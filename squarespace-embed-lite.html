@@ -1,0 +1,363 @@
+<!-- DASH interactive panel (lite - Quicksand from Google Fonts) -->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@500;700&display=swap');
+
+#dash-embed{--glow:rgba(255,42,84,.35);--muted:#928aa0;--bg2:#12101f;--line:rgba(255,255,255,.09);--ink:#f1edf7;
+  font-family:"Quicksand",system-ui,sans-serif;font-weight:500;display:flex;justify-content:center;width:100%;
+  padding:12px;-webkit-font-smoothing:antialiased}
+#dash-embed *{box-sizing:border-box}
+#dash-embed .stage{display:flex;flex-direction:column;align-items:center;gap:13px;width:100%;max-width:520px}
+#dash-embed .device{position:relative;padding:16px;border-radius:24px;width:100%;
+  background:linear-gradient(145deg,#241d33,#0c0a14);
+  box-shadow:0 30px 70px -28px #000, inset 0 1px 0 rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.05)}
+#dash-embed .device::after{content:"DASH";position:absolute;bottom:5px;left:50%;transform:translateX(-50%);
+  font-size:9px;letter-spacing:.35em;color:rgba(255,255,255,.22);font-weight:700}
+#dash-embed #panel{display:block;width:100%;height:auto;border-radius:8px;cursor:pointer;touch-action:manipulation;
+  box-shadow:0 0 0 2px #000, 0 0 34px -6px var(--glow)}
+#dash-embed .hint{font-size:12.5px;color:var(--muted);text-align:center;line-height:1.5}
+#dash-embed .hint b{color:var(--ink);font-weight:700}
+#dash-embed .themechips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+#dash-embed .chip{border:1px solid var(--line);background:var(--bg2);color:var(--muted);border-radius:999px;
+  padding:6px 13px;font-family:inherit;font-weight:700;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:7px}
+#dash-embed .chip.active{color:var(--ink)}
+#dash-embed .chip .dot{width:9px;height:9px;border-radius:50%}
+</style>
+<div id="dash-embed">
+  <div class="stage">
+    <div class="device"><canvas id="panel" width="640" height="480"></canvas></div>
+    <div class="hint"><b>Live demo.</b> Tap the switches &middot; tap the gear for settings &middot; try a theme:</div>
+    <div class="themechips" id="chips"></div>
+  </div>
+</div>
+<script>
+(function(){
+
+/* ============ DASH panel simulator (faithful to the firmware) ============ */
+const cv = document.getElementById('panel');
+const ctx = cv.getContext('2d');
+const SCALE = 2;                       // 320x240 rendered at 2x
+ctx.scale(SCALE, SCALE);
+
+/* themes &mdash; exact firmware values */
+const THEMES = [
+ {name:'CYBERPUNK', acc:[255,42,84],  bg:[10,8,18],  hdr:[18,12,28], card:[22,16,34], bdr:[62,50,84],  txt:[168,158,182], ico:[110,98,132], sub:[140,128,156]},
+ {name:'DEEP SEA',  acc:[0,200,255],  bg:[4,10,22],  hdr:[8,18,36],  card:[10,22,44], bdr:[30,60,95],  txt:[150,175,200], ico:[80,115,150], sub:[110,140,170]},
+ {name:'SUNSET',    acc:[255,150,20], bg:[16,10,8],  hdr:[28,16,10], card:[34,20,12], bdr:[90,55,30],  txt:[200,175,150], ico:[140,105,70], sub:[170,140,110]},
+ {name:'SONAR',     acc:[50,255,110], bg:[4,12,8],   hdr:[8,22,14],  card:[10,26,18], bdr:[28,70,45],  txt:[150,195,165], ico:[80,130,100], sub:[110,160,130]},
+];
+let theme = 0;
+const rgb = c => `rgb(${c[0]},${c[1]},${c[2]})`;
+const acc = p => { const a = THEMES[theme].acc; return `rgb(${a[0]*p/100|0},${a[1]*p/100|0},${a[2]*p/100|0})`; };
+const T = () => THEMES[theme];
+
+/* icon paths (24x24 viewBox) + animation type: spin|bob|sway|shake|none */
+const ICONS = {
+ lighthouse:"M8,10V8H9V4H8V3L12,1L16,3V4H15V8H16V10H14.74L8.44,13.64L9,10H8M13,8V4H11V8H13M7,23L7.04,22.76L16.15,17.5L16.67,20.88L13,23H7M8.05,16.17L15.31,12L15.83,15.37L7.43,20.22L8.05,16.17Z",
+ pump:"M19,14.5C19,14.5 21,16.67 21,18A2,2 0 0,1 19,20A2,2 0 0,1 17,18C17,16.67 19,14.5 19,14.5M5,18V9A2,2 0 0,1 3,7A2,2 0 0,1 5,5V4A2,2 0 0,1 7,2H9A2,2 0 0,1 11,4V5H19A2,2 0 0,1 21,7V9L21,11A1,1 0 0,1 22,12A1,1 0 0,1 21,13H17A1,1 0 0,1 16,12A1,1 0 0,1 17,11V9H11V18H12A2,2 0 0,1 14,20V22H2V20A2,2 0 0,1 4,18H5Z",
+ anchor:"M12 2A3 3 0 0 0 9 5A3 3 0 0 0 11 7.83V9H8V11H11V19.92C10.26 19.79 9.5 19.58 8.79 19.27C8.05 18.95 7.4 18.56 6.82 18.09C6.24 17.62 5.78 17.11 5.44 16.55L7 15L3 12V15C3 15.97 3.27 16.88 3.82 17.72C4.37 18.56 5.09 19.31 6 19.95C6.87 20.59 7.84 21.09 8.88 21.45C9.93 21.81 10.97 22 12 22C13.03 22 14.07 21.8 15.12 21.44C16.16 21.08 17.13 20.58 18 19.95C18.92 19.31 19.63 18.57 20.18 17.72C20.73 16.88 21 15.97 21 15V12L17 15L18.56 16.55C18.22 17.11 17.76 17.62 17.18 18.09C16.6 18.56 15.95 18.95 15.21 19.27C14.5 19.58 13.74 19.79 13 19.92V11H16V9H13V7.82A3 3 0 0 0 15 5A3 3 0 0 0 12 2M12 4A1 1 0 0 1 13 5A1 1 0 0 1 12 6A1 1 0 0 1 11 5A1 1 0 0 1 12 4Z",
+ helm:"M2,11L4.05,11.1C4.3,8.83 5.5,6.85 7.25,5.56L6.13,3.84C5.86,3.36 6,2.75 6.5,2.47C7,2.2 7.59,2.36 7.87,2.84L8.8,4.66C9.78,4.24 10.86,4 12,4C13.14,4 14.22,4.24 15.2,4.66L16.13,2.84C16.41,2.36 17,2.2 17.5,2.47C18,2.75 18.14,3.36 17.87,3.84L16.75,5.56C18.5,6.85 19.7,8.83 19.95,11.1L22,11A1,1 0 0,1 23,12A1,1 0 0,1 22,13L19.95,12.9C19.7,15.17 18.5,17.15 16.75,18.44L17.87,20.16C18.14,20.64 18,21.25 17.5,21.53C17,21.8 16.41,21.64 16.13,21.16L15.2,19.34C14.22,19.76 13.14,20 12,20C10.86,20 9.78,19.76 8.8,19.34L7.87,21.16C7.59,21.64 7,21.8 6.5,21.53C6,21.25 5.86,20.64 6.13,20.16L7.25,18.44C5.5,17.15 4.3,15.17 4.05,12.9L2,13A1,1 0 0,1 1,12A1,1 0 0,1 2,11M9.07,11.35C9.2,10.74 9.53,10.2 10,9.79L8.34,7.25C7.11,8.19 6.27,9.6 6.05,11.2L9.07,11.35M12,9C12.32,9 12.62,9.05 12.9,9.14L14.28,6.45C13.58,6.16 12.81,6 12,6C11.19,6 10.42,6.16 9.72,6.45L11.1,9.14C11.38,9.05 11.68,9 12,9M14.93,11.35L17.95,11.2C17.73,9.6 16.89,8.19 15.66,7.25L14,9.79C14.47,10.2 14.8,10.74 14.93,11.35M14.93,12.65C14.8,13.26 14.47,13.8 14,14.21L15.66,16.75C16.89,15.81 17.73,14.4 17.95,12.8L14.93,12.65M12,15C11.68,15 11.38,14.95 11.09,14.86L9.72,17.55C10.42,17.84 11.19,18 12,18C12.81,18 13.58,17.84 14.28,17.55L12.91,14.86C12.62,14.95 12.32,15 12,15M9.07,12.65L6.05,12.8C6.27,14.4 7.11,15.81 8.34,16.75L10,14.21C9.53,13.8 9.2,13.26 9.07,12.65Z",
+ horn:"M19,2.8V6L19,9.2C19,9.5 18.7,9.8 18.4,9.7C18.4,9.7 14.5,7.1 10,7.1V9.5H10.2C10.7,9.5 11.2,9.7 11.4,10.1L12.7,11.9C12.9,12.1 13,12.4 13,12.6V20.6C13,21.3 12.3,22 11.5,22H6.5C5.7,22 5,21.4 5,20.6V12.6C5,12.3 5.1,12.1 5.3,11.9L6.6,10.1C6.9,9.7 7.3,9.5 7.8,9.5H8V8C7.6,8.5 7,8.8 6.4,8.8C5.1,8.8 4,7.5 4,6C4,4.5 5.1,3.2 6.4,3.2C7,3.3 7.6,3.6 8,4V2.6H10V5C14.5,5 18.4,2.4 18.4,2.4C18.7,2.3 19,2.5 19,2.8Z",
+ fan:"M12,11A1,1 0 0,0 11,12A1,1 0 0,0 12,13A1,1 0 0,0 13,12A1,1 0 0,0 12,11M12.5,2C17,2 17.11,5.57 14.75,6.75C13.76,7.24 13.32,8.29 13.13,9.22C13.61,9.42 14.03,9.73 14.35,10.13C18.05,8.13 22.03,8.92 22.03,12.5C22.03,17 18.46,17.1 17.28,14.73C16.78,13.74 15.72,13.3 14.79,13.11C14.59,13.59 14.28,14 13.88,14.34C15.87,18.03 15.08,22 11.5,22C7,22 6.91,18.42 9.27,17.24C10.25,16.75 10.69,15.71 10.89,14.79C10.4,14.59 9.97,14.27 9.65,13.87C5.96,15.85 2,15.07 2,11.5C2,7 5.56,6.89 6.74,9.26C7.24,10.25 8.29,10.68 9.22,10.87C9.41,10.39 9.73,9.97 10.14,9.65C8.15,5.96 8.94,2 12.5,2Z",
+ bulb:"M12,6A6,6 0 0,1 18,12C18,14.22 16.79,16.16 15,17.2V19A1,1 0 0,1 14,20H10A1,1 0 0,1 9,19V17.2C7.21,16.16 6,14.22 6,12A6,6 0 0,1 12,6M14,21V22A1,1 0 0,1 13,23H11A1,1 0 0,1 10,22V21H14M20,11H23V13H20V11M1,11H4V13H1V11M13,1V4H11V1H13M4.92,3.5L7.05,5.64L5.63,7.05L3.5,4.93L4.92,3.5M16.95,5.63L19.07,3.5L20.5,4.93L18.37,7.05L16.95,5.63Z",
+ radio:"M9,2A1,1 0 0,0 8,3C8,8.67 8,14.33 8,20C8,21.11 8.89,22 10,22H15C16.11,22 17,21.11 17,20V9C17,7.89 16.11,7 15,7H10V3A1,1 0 0,0 9,2M10,9H15V13H10V9Z",
+ music:"M21,3V15.5A3.5,3.5 0 0,1 17.5,19A3.5,3.5 0 0,1 14,15.5A3.5,3.5 0 0,1 17.5,12C18.04,12 18.55,12.12 19,12.34V6.47L9,8.6V17.5A3.5,3.5 0 0,1 5.5,21A3.5,3.5 0 0,1 2,17.5A3.5,3.5 0 0,1 5.5,14C6.04,14 6.55,14.12 7,14.34V6L21,3Z",
+ plug:"M16,7V3H14V7H10V3H8V7H8C7,7 6,8 6,9V14.5L9.5,18V21H14.5V18L18,14.5V9C18,8 17,7 16,7Z",
+};
+const PATH = {}; for(const k in ICONS) PATH[k] = new Path2D(ICONS[k]);
+
+/* default relays (mirror firmware defaults) */
+const relays = [
+ {lbl:'WIPER',    ic:'wiper', anim:'wiper', on:false, mom:false},
+ {lbl:'LANTERNS', ic:'bulb',  anim:'none',  on:false, mom:false},
+ {lbl:'BILGE',    ic:'fan',   anim:'spin',  on:false, mom:false},
+ {lbl:'VHF',      ic:'radio', anim:'none',  on:false, mom:false},
+ {lbl:'STEREO',   ic:'music', anim:'bob',   on:false, mom:false},
+ {lbl:'AUX 1',    ic:'plug',  anim:'none',  on:false, mom:false},
+];
+let count = 6;
+let screen = 'main';          // 'main' | 'settings' | 'config'
+let wifiOn = false;
+let configRelay = 0;
+let kbdBuf = '';
+relays.forEach(r=>{ r.animOn = true; });
+const ICON_ORDER = ['wiper','bulb','fan','radio','music','plug','lighthouse','pump','anchor','helm','horn'];
+const ANIM_FOR = {wiper:'wiper',bulb:'none',fan:'spin',radio:'none',music:'bob',plug:'none',
+                  lighthouse:'sway',pump:'bob',anchor:'sway',helm:'spin',horn:'shake'};
+const KR1='QWERTYUIOP', KR2='ASDFGHJKL', KR3='ZXCVBNM', KR4='1234567890';
+
+/* dynamic layout (mirror computeLayout) */
+let cols=3, rows=2, cw=100, ch=90, gl=4, iconSize=40;
+const GAP=4, GT=36, FTR=16;
+function layout(){
+  if(count===1){cols=1;rows=1;} else if(count===2){cols=2;rows=1;}
+  else if(count===3){cols=3;rows=1;} else if(count===4){cols=2;rows=2;}
+  else {cols=3;rows=2;}
+  cw=(320-8-(cols-1)*GAP)/cols;
+  ch=(240-GT-FTR-4-(rows-1)*GAP)/rows;
+  gl=(320-cols*cw-(cols-1)*GAP)/2;
+  iconSize = rows===1?80 : count===4?60 : 40;
+}
+layout();
+function cardXY(i){ return [gl+(i%cols)*(cw+GAP), GT+((i/cols|0))*(ch+GAP)]; }
+
+/* rounded-rect helper */
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function text(s,x,y,px,col,al='left',w=700){ctx.font=`${w} ${px}px Quicksand,sans-serif`;ctx.textAlign=al;ctx.textBaseline='alphabetic';ctx.fillStyle=col;ctx.fillText(s,x,y);}
+function icon(name,cx,cy,size,col,t){
+  ctx.save();ctx.translate(cx,cy);
+  const r=relays.__t; // unused
+  ctx.fillStyle=col;
+  const sc=size/24;
+  // animation transform
+  if(t){ctx.rotate(t.rot||0);ctx.translate(t.dx||0,t.dy||0);}
+  ctx.scale(sc,sc);ctx.translate(-12,-12);
+  ctx.fill(PATH[name]);
+  ctx.restore();
+}
+/* wiper is drawn custom: static windshield arc + a sweeping arm (theta deg) */
+function drawWiper(cx,cy,size,col,theta){
+  const s=size/24, px=cx-size/2+12*s, py=cy-size/2+20*s;
+  ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineCap='round';
+  ctx.lineWidth=1.6*s;
+  ctx.beginPath();ctx.arc(px,py,15.4*s,-Math.PI/2-0.92,-Math.PI/2+0.92);ctx.stroke();
+  ctx.beginPath();ctx.arc(px,py,2.4*s,0,7);ctx.fill();
+  const th=theta*Math.PI/180, dx=Math.sin(th), dy=-Math.cos(th);
+  ctx.lineWidth=1.7*s;
+  ctx.beginPath();ctx.moveTo(px+2*s*dx,py+2*s*dy);ctx.lineTo(px+13.6*s*dx,py+13.6*s*dy);ctx.stroke();
+  ctx.lineWidth=3.2*s;
+  ctx.beginPath();ctx.moveTo(px+6*s*dx,py+6*s*dy);ctx.lineTo(px+13.8*s*dx,py+13.8*s*dy);ctx.stroke();
+  ctx.lineCap='butt';
+}
+function drawRelayIcon(name,cx,cy,size,col,t,theta){
+  if(name==='wiper') drawWiper(cx,cy,size,col,theta||0);
+  else icon(name,cx,cy,size,col,t);
+}
+
+function drawGear(cx,cy,col){
+  for(let i=0;i<8;i++){const a=i*Math.PI/4;ctx.fillStyle=col;ctx.beginPath();
+    ctx.arc(cx+Math.round(6*Math.cos(a)),cy+Math.round(6*Math.sin(a)),1.3,0,7);ctx.fill();}
+  ctx.fillStyle=col;ctx.beginPath();ctx.arc(cx,cy,5,0,7);ctx.fill();
+  ctx.fillStyle=rgb(T().hdr);ctx.beginPath();ctx.arc(cx,cy,2.2,0,7);ctx.fill();
+}
+
+function drawMain(now){
+  const f=Math.floor(now/80);
+  ctx.fillStyle=rgb(T().bg);ctx.fillRect(0,0,320,240);
+  // header
+  ctx.fillStyle=rgb(T().hdr);ctx.fillRect(0,0,320,32);
+  ctx.fillStyle=acc(100);ctx.fillRect(0,31,320,1);
+  const onCount=relays.slice(0,count).filter(r=>r.on).length;
+  text(`${onCount} OF ${count} ACTIVE`,8,21,15,onCount>0?acc(100):rgb(T().sub),'left',700);
+  drawGear(307,15,acc(100));
+  for(let i=0;i<count;i++){
+    const dx=320-46-(count-1-i)*15;
+    if(relays[i].on){ctx.fillStyle=acc(100);ctx.beginPath();ctx.arc(dx,15,4,0,7);ctx.fill();}
+    else{ctx.strokeStyle=rgb(T().bdr);ctx.lineWidth=1;ctx.beginPath();ctx.arc(dx,15,4,0,7);ctx.stroke();}
+  }
+  // cards
+  for(let i=0;i<count;i++){
+    const [x,y]=cardXY(i), r=relays[i], on=r.on;
+    ctx.fillStyle=on?acc(14):rgb(T().card);rr(x,y,cw,ch,6);ctx.fill();
+    ctx.strokeStyle=on?acc(100):rgb(T().bdr);ctx.lineWidth=1;rr(x+.5,y+.5,cw-1,ch-1,6);ctx.stroke();
+    if(on){ctx.strokeStyle=acc(50);rr(x+1.5,y+1.5,cw-3,ch-3,5);ctx.stroke();}
+    text('R'+(i+1),x+5,y+13,11,on?acc(85):rgb(T().ico),'left',700);
+    if(r.mom) text('MOM',x+cw-5,y+13,11,on?'#fff':rgb(T().ico),'right',700);
+    // icon
+    const icx=x+cw/2, icy=y+(ch-20)/2+2;
+    let t=null, wtheta=0;
+    if(on && r.animOn){
+      if(r.anim==='spin') t={rot:f*0.32};
+      else if(r.anim==='bob') t={dy:[0,1,2,1,0,-1,-2,-1][f%8]};
+      else if(r.anim==='sway'){const s=[0,1,2,1,0,-1,-2,-1][f%8];t={dx:s};}
+      else if(r.anim==='shake'){const sx=[0,1,-1,1,-1,0][f%6],sy=[0,-1,1,1,-1,0][f%6];t={dx:sx,dy:sy};}
+      else if(r.anim==='wiper') wtheta=50*Math.sin(f*0.34);
+    }
+    drawRelayIcon(r.ic,icx,icy,iconSize,on?'#fff':rgb(T().ico),t,wtheta);
+    text(r.lbl,icx,y+ch-9,iconSize>=60?16:15,on?acc(100):rgb(T().txt),'center',700);
+  }
+}
+
+function tile(x,w,ty,label,val,valcol,activeBg){
+  ctx.fillStyle=activeBg||rgb(T().hdr);rr(x,ty,w,30,3);ctx.fill();
+  ctx.strokeStyle=acc(60);ctx.lineWidth=1;rr(x+.5,ty+.5,w-1,29,3);ctx.stroke();
+  text(label,x+8,ty+13,10.5,rgb(T().sub),'left',700);
+  text(val,x+8,ty+25,12.5,valcol,'left',700);
+}
+function drawSettings(){
+  ctx.fillStyle=rgb(T().bg);ctx.fillRect(0,0,320,240);
+  ctx.fillStyle=rgb(T().hdr);ctx.fillRect(0,0,320,32);
+  ctx.fillStyle=acc(100);ctx.fillRect(0,31,320,1);
+  text('SETTINGS',6,22,17,acc(100),'left',700);
+  text('TAP TO EDIT',314,21,11,rgb(T().sub),'right',700);
+  const ROW=28;
+  for(let i=0;i<count;i++){
+    const ry=36+i*ROW;
+    ctx.fillStyle=rgb(T().card);rr(4,ry,312,ROW-2,3);ctx.fill();
+    ctx.strokeStyle=rgb(T().bdr);ctx.lineWidth=1;rr(4.5,ry+.5,311,ROW-3,3);ctx.stroke();
+    ctx.fillStyle=acc(90);rr(6,ry+4,3,ROW-10,1);ctx.fill();
+    text('R'+(i+1),14,ry+15,11,acc(80),'left',700);
+    text(relays[i].lbl,34,ry+16,15,'#fff','left',700);
+    if(relays[i].mom){ctx.fillStyle=acc(40);rr(320-62,ry+6,44,14,4);ctx.fill();text('MOM',320-40,ry+16,11,'#fff','center',700);}
+    text('>',320-16,ry+16,11,rgb(T().sub),'left',700);
+  }
+  const ty=36+6*ROW+2, TW=102;
+  tile(4,TW,ty,'THEME',T().name,acc(100));
+  tile(110,TW,ty,'RELAYS',''+count,acc(100));
+  tile(216,100,ty,'WEB SETUP',wifiOn?'192.168.4.1':'OFF',wifiOn?'#fff':acc(100),wifiOn?acc(25):null);
+}
+
+/* relay config screen */
+function cfgCard(x,y,w,h){
+  ctx.fillStyle=rgb(T().card);rr(x,y,w,h,4);ctx.fill();
+  ctx.strokeStyle=rgb(T().bdr);ctx.lineWidth=1;rr(x+.5,y+.5,w-1,h-1,4);ctx.stroke();
+}
+function drawConfig(now){
+  const r=relays[configRelay];
+  ctx.fillStyle=rgb(T().bg);ctx.fillRect(0,0,320,240);
+  ctx.fillStyle=rgb(T().hdr);ctx.fillRect(0,0,320,32);
+  ctx.fillStyle=acc(100);ctx.fillRect(0,31,320,1);
+  text('< BACK',6,21,11,rgb(T().sub),'left',700);
+  text('RELAY '+(configRelay+1),160,22,17,'#fff','center',700);
+  // Icon card
+  cfgCard(4,38,312,54);
+  text('ICON  (tap to change)',12,52,10.5,rgb(T().sub),'left',700);
+  drawRelayIcon(r.ic,42,66,30,acc(100),null,0);
+  text(r.ic.toUpperCase(),190,71,13,'#fff','center',700);
+  text('>',302,64,12,rgb(T().sub),'left',700);
+  // Name card
+  cfgCard(4,98,312,40);
+  text('NAME  (tap to edit)',12,112,10.5,rgb(T().sub),'left',700);
+  text(r.lbl,160,131,15,'#fff','center',700);
+  text('>',302,124,12,rgb(T().sub),'left',700);
+  // Trigger card
+  cfgCard(4,144,154,42);
+  text('TRIGGER',12,158,10.5,rgb(T().sub),'left',700);
+  text(r.mom?'MOMENTARY':'TOGGLE',12,176,14,r.mom?acc(100):rgb(T().txt),'left',700);
+  // Animation card
+  cfgCard(162,144,154,42);
+  text('ANIMATION',170,158,10.5,rgb(T().sub),'left',700);
+  text(r.animOn?'ON':'OFF',170,176,14,r.animOn?acc(100):rgb(T().txt),'left',700);
+  // hint
+  text('Tap a card to change it. Tap < BACK to return.',160,206,11,rgb(T().sub),'center',500);
+}
+
+/* on-screen keyboard (rename a switch) */
+function kbdKey(x,y,w,h,label,bg){
+  ctx.fillStyle=bg;rr(x+1,y+1,w-2,h-2,3);ctx.fill();
+  ctx.strokeStyle=rgb(T().bdr);ctx.lineWidth=1;rr(x+1.5,y+1.5,w-3,h-3,3);ctx.stroke();
+  text(label,x+w/2,y+h/2+5,14,'#fff','center',700);
+}
+function drawKeyboard(){
+  ctx.fillStyle=rgb(T().bg);ctx.fillRect(0,0,320,240);
+  ctx.fillStyle=rgb(T().hdr);ctx.fillRect(0,0,320,32);
+  ctx.fillStyle=acc(100);ctx.fillRect(0,31,320,1);
+  text('< BACK',6,21,11,rgb(T().sub),'left',700);
+  text('RELAY '+(configRelay+1)+' NAME',160,21,12,'#fff','center',700);
+  text('SAVE >',314,21,11,acc(100),'right',700);
+  // text field
+  ctx.fillStyle=rgb(T().card);ctx.fillRect(4,34,312,20);
+  ctx.strokeStyle=acc(100);ctx.lineWidth=1;ctx.strokeRect(4,34,312,20);
+  text(kbdBuf,9,49,15,'#fff','left',700);
+  ctx.font='700 15px Quicksand,sans-serif';
+  ctx.fillStyle=acc(100);ctx.fillRect(11+ctx.measureText(kbdBuf).width,38,7,13);
+  const kb=rgb(T().card);
+  for(let i=0;i<10;i++) kbdKey(i*32,58,32,40,KR1[i],kb);
+  for(let i=0;i<9;i++)  kbdKey(i*28,100,28,40,KR2[i],kb);
+  kbdKey(252,100,68,40,'DEL',acc(42));
+  for(let i=0;i<7;i++)  kbdKey(i*32,142,32,40,KR3[i],kb);
+  kbdKey(224,142,96,40,'SPACE',rgb(T().bdr));
+  for(let i=0;i<10;i++) kbdKey(i*32,184,32,40,KR4[i],acc(20));
+}
+function kbdType(c){ if(kbdBuf.length<11) kbdBuf+=c; }
+function kbdClick(px,py){
+  if(py<32){                                    // header: right = SAVE, else discard
+    if(px>264){ const v=kbdBuf.toUpperCase().trim(); if(v) relays[configRelay].lbl=v; }
+    screen='config'; return;
+  }
+  if(py>=58&&py<100){ const k=Math.floor(px/32); if(k<10) kbdType(KR1[k]); }
+  else if(py>=100&&py<142){ if(px>=252) kbdBuf=kbdBuf.slice(0,-1); else{const k=Math.floor(px/28); if(k<9) kbdType(KR2[k]);} }
+  else if(py>=142&&py<184){ if(px>=224) kbdType(' '); else{const k=Math.floor(px/32); if(k<7) kbdType(KR3[k]);} }
+  else if(py>=184&&py<224){ const k=Math.floor(px/32); if(k<10) kbdType(KR4[k]); }
+}
+
+/* frame loop */
+let raf;
+function frame(now){
+  if(screen==='main') drawMain(now);
+  else if(screen==='settings') drawSettings();
+  else if(screen==='config') drawConfig(now);
+  else drawKeyboard();
+  raf=requestAnimationFrame(frame);
+}
+
+/* input */
+function hit(ev){
+  const rect=cv.getBoundingClientRect();
+  const px=(ev.clientX-rect.left)/rect.width*320;
+  const py=(ev.clientY-rect.top)/rect.height*240;
+  return [px,py];
+}
+cv.addEventListener('click',ev=>{
+  const [px,py]=hit(ev);
+  if(screen==='main'){
+    if(py<32){ screen='settings'; return; }           // gear / header -> settings
+    for(let i=0;i<count;i++){
+      const [x,y]=cardXY(i);
+      if(px>=x&&px<x+cw&&py>=y&&py<y+ch){
+        const r=relays[i];
+        if(r.mom){ r.on=true; setTimeout(()=>r.on=false,500); }  // momentary "honk"
+        else r.on=!r.on;
+      }
+    }
+  } else if(screen==='settings'){
+    if(py<32){ screen='main'; return; }                // header -> back
+    const ty=36+6*28+2;
+    if(py>=ty&&py<ty+30){                               // bottom tiles
+      if(px<108) theme=(theme+1)%THEMES.length;
+      else if(px<214){ count=(count%6)+1; layout(); }
+      else wifiOn=!wifiOn;
+      syncChips();
+      return;
+    }
+    const row=Math.floor((py-36)/28);                  // tap a switch to edit it
+    if(row>=0 && row<count){ configRelay=row; screen='config'; }
+  } else if(screen==='config'){
+    if(py<32){ screen='settings'; return; }            // header -> back
+    const r=relays[configRelay];
+    if(py>=38 && py<92){                                // icon card -> cycle icon
+      const n=(ICON_ORDER.indexOf(r.ic)+1)%ICON_ORDER.length;
+      r.ic=ICON_ORDER[n]; r.anim=ANIM_FOR[r.ic];
+    } else if(py>=98 && py<138){                        // name card -> keyboard
+      kbdBuf=r.lbl; screen='keyboard';
+    } else if(py>=144 && py<186){
+      if(px<160) r.mom=!r.mom;                          // trigger card
+      else r.animOn=!r.animOn;                          // animation card
+    }
+  } else { // keyboard
+    kbdClick(px,py);
+  }
+});
+
+/* theme chips outside the panel */
+const chipWrap=document.getElementById('chips');
+function syncChips(){
+  chipWrap.innerHTML='';
+  THEMES.forEach((th,i)=>{
+    const b=document.createElement('button');
+    b.className='chip'+(i===theme?' active':'');
+    b.innerHTML=`<span class="dot" style="background:rgb(${th.acc.join(',')})"></span>${th.name}`;
+    b.onclick=()=>{theme=i;syncChips();};
+    chipWrap.appendChild(b);
+  });
+}
+syncChips();
+
+/* start once the embedded font is ready so canvas text renders in Quicksand */
+if(document.fonts&&document.fonts.load){
+  document.fonts.load('700 16px Quicksand').then(()=>{raf=requestAnimationFrame(frame);})
+    .catch(()=>{raf=requestAnimationFrame(frame);});
+  setTimeout(()=>{if(!raf)raf=requestAnimationFrame(frame);},600);
+}else raf=requestAnimationFrame(frame);
+
+})();
+</script>
