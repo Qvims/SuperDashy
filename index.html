@@ -65,14 +65,15 @@ a{color:inherit}
 .hero .cta{display:flex;gap:12px;justify-content:center;margin-top:26px;flex-wrap:wrap}
 
 /* -- simulator -- */
-.stage{display:flex;flex-direction:column;align-items:center;gap:16px;margin-top:40px}
-.device{position:relative;padding:18px;border-radius:26px;
+.stage{display:flex;flex-direction:column;align-items:center;gap:16px;margin:40px auto 0;
+  width:100%;max-width:560px}
+.device{position:relative;padding:18px;border-radius:26px;width:100%;
   background:linear-gradient(145deg,#241d33,#0c0a14);
   box-shadow:0 40px 90px -30px #000, inset 0 1px 0 rgba(255,255,255,.06);
   border:1px solid rgba(255,255,255,.05)}
 .device::after{content:"DASH";position:absolute;bottom:6px;left:50%;transform:translateX(-50%);
   font-size:10px;letter-spacing:.35em;color:rgba(255,255,255,.22);font-weight:700}
-#panel{display:block;border-radius:9px;cursor:pointer;touch-action:manipulation;
+#panel{display:block;width:100%;height:auto;border-radius:9px;cursor:pointer;touch-action:manipulation;
   box-shadow:0 0 0 2px #000, 0 0 40px -6px var(--glow)}
 .hint{font-size:13px;color:var(--muted);display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center}
 .hint b{color:var(--ink);font-weight:700}
@@ -148,6 +149,12 @@ footer{border-top:1px solid var(--line);margin-top:96px}
   .adv{grid-template-columns:1fr}
   .feat{grid-template-columns:1fr}
   .specrow{grid-template-columns:1fr;gap:2px}
+  .sec{padding:60px 20px}
+  .sec-tight{padding:44px 20px}
+  .hero{padding:30px 18px 6px}
+  .device{padding:12px;border-radius:20px}
+  .band .inner{padding:40px 22px}
+  .specrow{padding:14px 18px}
 }
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
 </style>
